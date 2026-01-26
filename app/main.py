@@ -37,9 +37,12 @@ from app.routers import multi_market_stocks as multi_market_stocks_router
 from app.routers import notifications as notifications_router
 from app.routers import websocket_notifications as websocket_notifications_router
 from app.routers import scheduler as scheduler_router
+from app.routers import futures as futures_router
 from app.services.basics_sync_service import get_basics_sync_service
 from app.services.multi_source_basics_sync_service import MultiSourceBasicsSyncService
 from app.services.scheduler_service import set_scheduler_instance
+from app.services.futures_config_service import get_futures_config_service
+from app.services.futures_scheduler_service import get_futures_scheduler_service
 from app.worker.tushare_sync_service import (
     run_tushare_basic_info_sync,
     run_tushare_quotes_sync,
@@ -569,6 +572,47 @@ async def lifespan(app: FastAPI):
         else:
             logger.info(f"📰 新闻数据同步已配置（仅自选股）: {settings.NEWS_SYNC_CRON}")
 
+        # ==================== 期货推荐定时任务配置 ====================
+        logger.info("🔄 配置期货推荐定时任务...")
+        try:
+            # 初始化期货配置服务
+            futures_config_service = get_futures_config_service()
+            futures_config = await futures_config_service.get_or_create_default_config()
+
+            # 获取期货定时任务服务
+            futures_scheduler_service = get_futures_scheduler_service()
+
+            # 添加期货推荐定时任务
+            # 工作日 09:30-11:30：每10分钟执行一次
+            scheduler.add_job(
+                futures_scheduler_service.execute_recommendation_task,
+                CronTrigger(hour="9-11", minute="*/10", day_of_week="0-4", timezone=settings.TIMEZONE),
+                id="futures_recommendation_morning",
+                name="期货推荐定时任务（日间上午）"
+            )
+            logger.info("📅 期货推荐定时任务已配置（日间上午 09:30-11:30，每10分钟）")
+
+            # 工作日 13:00-15:00：每10分钟执行一次
+            scheduler.add_job(
+                futures_scheduler_service.execute_recommendation_task,
+                CronTrigger(hour="13-14", minute="*/10", day_of_week="0-4", timezone=settings.TIMEZONE),
+                id="futures_recommendation_afternoon",
+                name="期货推荐定时任务（日间下午）"
+            )
+            logger.info("📅 期货推荐定时任务已配置（日间下午 13:00-15:00，每10分钟）")
+
+            # 工作日 21:00-23:30：每10分钟执行一次
+            scheduler.add_job(
+                futures_scheduler_service.execute_recommendation_task,
+                CronTrigger(hour="21-23", minute="*/10", day_of_week="0-4", timezone=settings.TIMEZONE),
+                id="futures_recommendation_night",
+                name="期货推荐定时任务（夜盘）"
+            )
+            logger.info("📅 期货推荐定时任务已配置（夜盘 21:00-23:30，每10分钟）")
+
+        except Exception as e:
+            logger.error(f"❌ 期货推荐定时任务配置失败: {e}", exc_info=True)
+
         scheduler.start()
 
         # 设置调度器实例到服务中，以便API可以管理任务
@@ -714,6 +758,9 @@ app.include_router(websocket_notifications_router.router, prefix="/api", tags=["
 
 # 定时任务管理
 app.include_router(scheduler_router.router, tags=["scheduler"])
+
+# 期货推荐系统
+app.include_router(futures_router.router, tags=["futures"])
 
 app.include_router(sse.router, prefix="/api/stream", tags=["streaming"])
 app.include_router(sync_router.router)
