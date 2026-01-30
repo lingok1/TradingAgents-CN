@@ -144,7 +144,7 @@ class OperationLogMiddleware(BaseHTTPMiddleware):
 
             # 尝试从Authorization头解析用户信息
             auth_header = request.headers.get("authorization")
-            if auth_header and auth_header.startswith("Bearer "):
+            if auth_header and auth_header.lower().startswith("bearer "):
                 token = auth_header.split(" ", 1)[1]
 
                 # 使用AuthService验证token
