@@ -1,5 +1,8 @@
 # 凌期AI辅助期货挑选品种和持仓止盈止损分析程序设计
 
+## v1文档路径
+D:\pythonCode\TradingAgents-CN\docs\deployment\v1.0.0-source-installation.md
+
 ## 期货版（基于当前项目，代码分支v1.0.0-preview开发）
 ## 后端（需求分析，编写api接口）
 业务需求1（优先实现）：
