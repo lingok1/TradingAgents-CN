@@ -5,6 +5,7 @@
 import logging
 from typing import Optional, List, Dict, Any
 from datetime import datetime
+
 from fastapi import APIRouter, HTTPException, Depends, Query
 from pydantic import BaseModel, Field
 
@@ -38,6 +39,11 @@ class UpdateAIModelsRequest(BaseModel):
     ai_models: List[Dict[str, Any]] = Field(..., description="AI模型配置列表")
 
 
+class UpdateExternalUrlsRequest(BaseModel):
+    """更新外部数据URL请求"""
+    urls: List[str] = Field(..., description="外部数据URL列表")
+
+
 # ==================== 推荐相关接口 ====================
 
 @router.post("/recommendations/generate", response_model=Dict[str, Any])
@@ -45,7 +51,14 @@ async def generate_recommendations(
     request: GenerateRecommendationRequest,
     user: dict = Depends(get_current_user)
 ):
-    """手动触发推荐生成"""
+    """
+    手动触发推荐生成
+
+    流程：
+    1. 调用 generate_prompt 获取完整提示词（包含宏观经济和期货价格数据）
+    2. 将提示词发送给 AI API 接口
+    3. 解析 AI 返回结果生成推荐
+    """
     try:
         logger.info(f"用户 {user['id']} 请求生成推荐")
         logger.info(f"请求参数: {request}")
@@ -54,7 +67,8 @@ async def generate_recommendations(
         batch = await service.generate_recommendations(
             symbols=request.symbols,
             ai_models=request.ai_models,
-            custom_prompt=request.custom_prompt
+            custom_prompt=request.custom_prompt,
+            external_urls=request.external_urls
         )
 
         return {
@@ -458,6 +472,54 @@ async def update_ai_models(
         raise HTTPException(status_code=400, detail=str(e))
 
 
+@router.post("/config/external-urls", response_model=Dict[str, Any])
+async def update_external_urls(
+    request: UpdateExternalUrlsRequest,
+    user: dict = Depends(get_current_user)
+):
+    """更新外部数据URL配置"""
+    try:
+        logger.info(f"用户 {user['id']} 请求更新外部数据URL配置")
+
+        config_service = get_futures_config_service()
+        success = await config_service.update_external_data_urls(request.urls)
+
+        if success:
+            return {
+                "success": True,
+                "data": {"urls": request.urls},
+                "message": "外部数据URL配置更新成功"
+            }
+        else:
+            raise HTTPException(status_code=400, detail="外部数据URL配置更新失败")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"更新外部数据URL配置失败: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/config/external-urls", response_model=Dict[str, Any])
+async def get_external_urls(
+    user: dict = Depends(get_current_user)
+):
+    """获取外部数据URL配置"""
+    try:
+        logger.info(f"用户 {user['id']} 请求获取外部数据URL配置")
+
+        config_service = get_futures_config_service()
+        urls = await config_service.get_external_data_urls()
+
+        return {
+            "success": True,
+            "data": {"urls": urls},
+            "message": "获取成功"
+        }
+    except Exception as e:
+        logger.error(f"获取外部数据URL配置失败: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 # ==================== 健康检查 ====================
 
 @router.get("/health", response_model=Dict[str, Any])
@@ -468,3 +530,35 @@ async def health_check():
         "status": "healthy",
         "message": "期货推荐系统正常运行"
     }
+
+
+# ==================== 提示词生成接口 ====================
+
+@router.get("/prompt/generate", response_model=Dict[str, Any])
+async def generate_prompt(
+    external_urls: Optional[List[str]] = Query(None, description="外部数据URL列表，不传则使用配置中的URL。第一个URL为宏观经济数据，第二个URL为期货品种价格数据"),
+    user: dict = Depends(get_current_user)
+):
+    """
+    获取期货提示词生成接口
+
+    功能：
+    1. 获取提示词模板
+    2. 从外部HTTPS请求获取JSON数据（第一个URL为宏观经济数据，第二个URL为期货品种价格数据）
+    3. 获取当前北京时间和开仓时间（当前时间+10分钟）
+    4. 将数据填充到模板中生成完整提示词
+    """
+    try:
+        logger.info(f"用户 {user['id']} 请求生成提示词")
+
+        service = get_futures_recommendation_service()
+        result = await service.generate_prompt(external_urls=external_urls)
+
+        return {
+            "success": True,
+            "data": result,
+            "message": "提示词生成成功"
+        }
+    except Exception as e:
+        logger.error(f"生成提示词失败: {e}", exc_info=True)
+        raise HTTPException(status_code=400, detail=str(e))

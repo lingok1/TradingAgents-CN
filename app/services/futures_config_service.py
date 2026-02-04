@@ -238,6 +238,40 @@ class FuturesConfigService:
             logger.error(f"获取Agent提示词失败: {e}")
             return {}
 
+    async def get_external_data_urls(self) -> List[str]:
+        """获取外部数据URL列表"""
+        try:
+            config = await self.get_active_config()
+            if not config:
+                return []
+            return getattr(config, 'external_data_urls', []) or []
+        except Exception as e:
+            logger.error(f"获取外部数据URL失败: {e}")
+            return []
+
+    async def update_external_data_urls(self, urls: List[str]) -> bool:
+        """更新外部数据URL列表"""
+        try:
+            config = await self.get_active_config()
+            if not config:
+                logger.error("未找到激活的配置")
+                return False
+
+            result = await self.collection.update_one(
+                {"_id": config.id},
+                {
+                    "$set": {
+                        "external_data_urls": urls,
+                        "updated_at": now_tz()
+                    }
+                }
+            )
+            logger.info(f"更新外部数据URL: {result.modified_count} 条记录")
+            return result.modified_count > 0
+        except Exception as e:
+            logger.error(f"更新外部数据URL失败: {e}")
+            return False
+
 
 # 全局服务实例
 _futures_config_service: Optional[FuturesConfigService] = None

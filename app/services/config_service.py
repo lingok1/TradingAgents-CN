@@ -3311,6 +3311,15 @@ class ConfigService:
         import asyncio
 
         try:
+            # 🔥 从模型目录获取该厂家配置的第一个模型用于测试
+            test_model_name = None
+            model_catalog = await self.get_provider_models(provider_name)
+            if model_catalog and model_catalog.models and len(model_catalog.models) > 0:
+                test_model_name = model_catalog.models[0].name
+                logger.info(f"🔍 从模型目录获取测试模型: {test_model_name} (厂家: {provider_name})")
+            else:
+                logger.info(f"⚠️ 厂家 {provider_name} 未配置模型目录，将使用默认测试模型")
+
             # 聚合渠道（使用 OpenAI 兼容 API）
             if provider_name in ["302ai", "oneapi", "newapi", "custom_aggregator"]:
                 # 获取厂家的 base_url
@@ -3319,7 +3328,7 @@ class ConfigService:
                 provider_data = await providers_collection.find_one({"name": provider_name})
                 base_url = provider_data.get("default_base_url") if provider_data else None
                 return await asyncio.get_event_loop().run_in_executor(
-                    None, self._test_openai_compatible_api, api_key, display_name, base_url, provider_name
+                    None, self._test_openai_compatible_api, api_key, display_name, base_url, provider_name, test_model_name
                 )
             elif provider_name == "google":
                 # 获取厂家的 base_url
@@ -3356,7 +3365,7 @@ class ConfigService:
                     }
 
                 return await asyncio.get_event_loop().run_in_executor(
-                    None, self._test_openai_compatible_api, api_key, display_name, base_url, provider_name
+                    None, self._test_openai_compatible_api, api_key, display_name, base_url, provider_name, test_model_name
                 )
         except Exception as e:
             return {
@@ -4230,7 +4239,7 @@ class ConfigService:
 
         return filtered
 
-    def _test_openai_compatible_api(self, api_key: str, display_name: str, base_url: str = None, provider_name: str = None) -> dict:
+    def _test_openai_compatible_api(self, api_key: str, display_name: str, base_url: str = None, provider_name: str = None, model_name: str = None) -> dict:
         """测试 OpenAI 兼容 API（用于聚合渠道和自定义厂家）"""
         try:
             import requests
@@ -4265,19 +4274,25 @@ class ConfigService:
                 "Authorization": f"Bearer {api_key}"
             }
 
-            # 🔥 根据不同厂家选择合适的测试模型
-            test_model = "gpt-3.5-turbo"  # 默认模型
-            if provider_name == "siliconflow":
-                # 硅基流动使用免费的 Qwen 模型进行测试
-                test_model = "Qwen/Qwen2.5-7B-Instruct"
-                logger.info(f"🔍 硅基流动使用测试模型: {test_model}")
-            elif provider_name == "zhipu":
-                # 智谱AI使用 glm-4 模型进行测试
-                test_model = "glm-4"
-                logger.info(f"🔍 智谱AI使用测试模型: {test_model}")
+            # 🔥 优先使用传入的模型名称，否则根据厂家选择合适的测试模型
+            test_model = model_name  # 优先使用从模型目录获取的模型
+            if not test_model:
+                # 如果没有传入模型名称，根据厂家选择默认模型
+                if provider_name == "siliconflow":
+                    # 硅基流动使用免费的 Qwen 模型进行测试
+                    test_model = "Qwen/Qwen2.5-7B-Instruct"
+                    logger.info(f"🔍 硅基流动使用测试模型: {test_model}")
+                elif provider_name == "zhipu":
+                    # 智谱AI使用 glm-4 模型进行测试
+                    test_model = "glm-4"
+                    logger.info(f"🔍 智谱AI使用测试模型: {test_model}")
+                else:
+                    test_model = "gpt-3.5-turbo"  # 默认模型
+                    logger.info(f"🔍 使用默认测试模型: {test_model}")
+            else:
+                logger.info(f"🔍 使用模型目录配置的测试模型: {test_model}")
 
-            # 使用一个通用的模型名称进行测试
-            # 聚合渠道通常支持多种模型，这里使用 gpt-3.5-turbo 作为测试
+            # 使用选定的模型进行测试
             data = {
                 "model": test_model,
                 "messages": [

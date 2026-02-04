@@ -157,15 +157,19 @@ class FuturesRecommendationBatch(BaseModel):
 
 class GenerateRecommendationRequest(BaseModel):
     """生成推荐请求模型"""
-    symbols: List[str] = Field(..., description="期货代码列表，如['IF', 'IC', 'IH']")
+    symbols: Optional[List[str]] = Field(None, description="期货代码列表，如['IF', 'IC', 'IH']（已弃用，推荐由AI自动选择）")
     ai_models: Optional[List[str]] = Field(None, description="指定使用的AI模型，不指定则使用配置中的所有启用模型")
-    custom_prompt: Optional[str] = Field(None, description="自定义提示词，不指定则使用配置中的提示词")
+    custom_prompt: Optional[str] = Field(None, description="自定义提示词，不指定则使用 generate_prompt 生成")
+    external_urls: Optional[List[str]] = Field(None, description="外部数据URL列表，第一个为宏观经济数据，第二个为期货品种价格数据")
 
     model_config = ConfigDict(json_schema_extra={
         "example": {
-            "symbols": ["IF", "IC", "IH"],
             "ai_models": ["gpt-4", "deepseek-chat"],
-            "custom_prompt": "请分析该期货品种的短期走势..."
+            "custom_prompt": None,
+            "external_urls": [
+                "https://futsseapi.eastmoney.com/list/custom/CNYOFFS_USDCNH,UDI_UDI,COMEX_GC00Y,NYMEX_CL00Y,EFI_EMFI,CFFEX_IFM,US4_DJIA,SGX_CN00Y,CFFEX_IM2603,SHFE_ag2602,CZCE_UR601,SHFE_fu2601,SHFE_cu2601?orderBy=&sort=&pageSize=999&pageIndex=0&specificContract=true&platform=zbPC&field=name,p,zdf,vol,ccl,rz,tjd,cje,zde,o,h,l,zf,zjsj,zt,dt,dm,sc,tag,uid,zsjd",
+                "https://futsseapi.eastmoney.com/list/trans/block/risk/mk0830?orderBy=&sort=&pageSize=999&pageIndex=0&specificContract=true&platform=zbPC&field=name,p,zdf,vol,ccl,rz,tjd,cje,zde,o,h,l,zf,zjsj,zt,dt,dm,sc,tag,uid,zsjd"
+            ]
         }
     })
 
@@ -204,6 +208,12 @@ class FuturesConfig(BaseModel):
             "night_end": "23:30"
         },
         description="交易时间配置"
+    )
+
+    # 外部数据URL配置（用于提示词生成）
+    external_data_urls: List[str] = Field(
+        default_factory=list,
+        description="外部数据URL列表，用于获取JSON数据追加到提示词"
     )
 
     # AI模型配置
